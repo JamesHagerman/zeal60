@@ -93,7 +93,7 @@ bool parse_indicator_row_column( const char *string, int *row, int *column )
 }
 
 hid_device *
-hid_open( unsigned short vendor_id, unsigned short product_id, unsigned short usage_page, unsigned short usage )
+hid_open( unsigned short vendor_id, unsigned short product_id, unsigned short interface_number )
 {
 	hid_device *device = NULL;
 	struct hid_device_info *deviceInfos;
@@ -103,15 +103,8 @@ hid_open( unsigned short vendor_id, unsigned short product_id, unsigned short us
 	currentDeviceInfo = deviceInfos;
 	while ( currentDeviceInfo )
 	{
-		//usage_page and usage are windows/mac only
-		#ifndef __linux__
-		if ( currentDeviceInfo->usage_page == usage_page &&
-			 currentDeviceInfo->usage == usage )
+		if ( currentDeviceInfo->interface_number == interface_number )
 		{
-		#else
-		if ( currentDeviceInfo->interface_number == 2 )
-		{
-		#endif
 			if ( foundDeviceInfo )
 			{
 				// More than one matching device.
@@ -136,7 +129,7 @@ hid_open( unsigned short vendor_id, unsigned short product_id, unsigned short us
 }
 
 std::vector<std::string>
-hid_get_device_paths( unsigned short vendor_id, unsigned short product_id, unsigned short usage_page, unsigned short usage )
+hid_get_device_paths( unsigned short vendor_id, unsigned short product_id, unsigned short interface_number )
 {
 	std::vector<std::string> devicePaths;
 	struct hid_device_info *deviceInfos;
@@ -146,15 +139,8 @@ hid_get_device_paths( unsigned short vendor_id, unsigned short product_id, unsig
 	currentDeviceInfo = deviceInfos;
 	while ( currentDeviceInfo )
 	{
-		//usage_page and usage are windows/mac only
-		#ifndef __linux__
-		if ( currentDeviceInfo->usage_page == usage_page &&
-			 currentDeviceInfo->usage == usage )
+		if ( currentDeviceInfo->interface_number == interface_number )
 		{
-		#else
-		if ( currentDeviceInfo->interface_number == 2 )
-		{
-		#endif
 			devicePaths.push_back( currentDeviceInfo->path );
 		}
 		currentDeviceInfo = currentDeviceInfo->next;
@@ -278,9 +264,9 @@ bool system_get_state( hid_device *device, msg_system_state *msg )
 
 
 hid_device *
-hid_open_least_uptime( unsigned short vendor_id, unsigned short product_id, unsigned short usage_page, unsigned short usage )
+hid_open_least_uptime( unsigned short vendor_id, unsigned short product_id, unsigned short interface_number )
 {
-	std::vector<std::string> devicePaths = hid_get_device_paths(vendor_id, product_id, usage_page, usage );
+	std::vector<std::string> devicePaths = hid_get_device_paths( vendor_id, product_id, interface_number );
 
 	// early abort
 	if ( devicePaths.size() == 0 )
@@ -345,6 +331,26 @@ hid_open_least_uptime( unsigned short vendor_id, unsigned short product_id, unsi
 	return NULL;
 }
 
+void
+hid_test(void)
+{
+	struct hid_device_info *devs, *cur_dev;
+
+	devs = hid_enumerate(0x0, 0x0);
+	cur_dev = devs;	
+	while (cur_dev) {
+		printf("Device Found\n  type: %04hx %04hx\n  path: %s\n  serial_number: %ls", cur_dev->vendor_id, cur_dev->product_id, cur_dev->path, cur_dev->serial_number);
+		printf("\n");
+		printf("  Manufacturer: %ls\n", cur_dev->manufacturer_string);
+		printf("  Product:      %ls\n", cur_dev->product_string);
+		printf("  Release:      %hx\n", cur_dev->release_number);
+		printf("  Interface:    %d\n",  cur_dev->interface_number);
+		printf("\n");
+		cur_dev = cur_dev->next;
+	}
+	hid_free_enumeration(devs);
+}
+
 int main(int argc, char **argv)
 {
 	if (hid_init())
@@ -353,7 +359,22 @@ int main(int argc, char **argv)
 		return -1;
 	}
 
-	hid_device *device = hid_open_least_uptime( DEVICE_VID, DEVICE_PID, DEVICE_USAGE_PAGE, DEVICE_USAGE );
+	if (argc <= 1)
+	{
+		// No args, do nothing
+		return 0;
+	}
+
+	// First arg is the command
+	std::string command = argv[1];
+
+	if ( command == "hidtest" )
+	{
+		hid_test();
+		return 0;
+	}
+
+	hid_device *device = hid_open_least_uptime( DEVICE_VID, DEVICE_PID, DEVICE_INTERFACE_NUMBER );
 	if ( ! device )
 	{
 		std::cerr << "*** Error: Device not found" << std::endl;
@@ -377,15 +398,6 @@ int main(int argc, char **argv)
 		return -1;
 	}
 
-	if (argc <= 1)
-	{
-		// No args, do nothing
-		return 0;
-	}
-
-	// First arg is the command
-	std::string command = argv[1];
-
 	if ( command == "backlight_config_set_values" )
 	{
 		msg_backlight_config_set_values msg;
@@ -399,6 +411,15 @@ int main(int argc, char **argv)
 		msg.disable_hhkb_blocker_leds = 0;
 		msg.disable_when_usb_suspended = 0;
 		msg.disable_after_timeout = 0;
+		msg.brightness = 255;
+		msg.effect = 255;
+		msg.effect_speed = 0;
+		msg.color_1.h = 0;
+		msg.color_1.s = 255;
+		msg.color_1.v = 255;
+		msg.color_2.h = 127;
+		msg.color_2.s = 255;
+		msg.color_2.v = 255;
 
 		msg.caps_lock_indicator_color.h = 0;
 		msg.caps_lock_indicator_color.s = 0;
@@ -491,6 +512,11 @@ int main(int argc, char **argv)
 				sscanf( value.c_str(), "%d", &intValue ) == 1 )
 			{
 				msg.effect = intValue;
+			}
+			else if ( name == "effect_speed" &&
+				sscanf( value.c_str(), "%d", &intValue ) == 1 )
+			{
+				msg.effect_speed = intValue;
 			}
 			else if ( name == "color_1" &&
 				parse_hsv_color_string2( value.c_str(), &hsvValue ) )

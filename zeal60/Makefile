@@ -1,5 +1,19 @@
+OSNAME:=$(shell uname -s)
+
+CPPFLAGS=-I/usr/local/lib -Wno-write-strings
+ifeq ($(OSNAME),Darwin)
+	CPPFLAGS += -lhidapi
+else
+	CPPFLAGS += -I/usr/local/include/hidapi -lhidapi-libusb
+endif
+
 zeal60: zeal60.cpp keycode.cpp keycode.h config.h
-	g++ -I/usr/local/include/hidapi -L/usr/local/lib -Wno-write-strings zeal60.cpp keycode.cpp -lhidapi-libusb -o zeal60
+	g++ $(CPPFLAGS) zeal60.cpp keycode.cpp -o zeal60
+
+zeal65: zeal60.cpp keycode.cpp keycode.h config.h
+	g++ $(CPPFLAGS) -DZEAL65 zeal60.cpp keycode.cpp -o zeal65
 
 clean:
-	$(RM) zeal60
+	$(RM) zeal60 zeal65
+
+all: zeal60 zeal65
